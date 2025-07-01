@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Проверка СИ через Аршин</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: Arial,sans-serif; margin:20px; }
+    input, button { width: 100%; font-size: 1.1em; margin-bottom: 15px; padding: 8px; }
+    button { background: #0088cc; color: white; border: none; cursor: pointer; }
+    button:disabled { background: #aaa; cursor: default; }
+    #result { white-space: pre-wrap; background:#f9f9f9; padding:15px; border-radius:5px; }
+  </style>
+</head>
+<body>
+
+  <h2>Проверка средства измерений</h2>
+  <input id="vriInput" type="text" placeholder="Введите номер свидетельства поверки" />
+  <button id="checkBtn">Проверить</button>
+
+  <div id="result"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const vriInput = document.getElementById('vriInput');
+    const checkBtn = document.getElementById('checkBtn');
+    const resultDiv = document.getElementById('result');
+
+    async function fetchVriData(vri) {
+      const url = `https://fgis.gost.ru/fundmetrology/eapi/vri?search=${encodeURIComponent(vri)}&rows=1&start=0`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Ошибка сети');
+      return await response.json();
+    }
+
+    function formatResult(item) {
+      const status = item.applicability ? '✅ Действительно' : '❌ Недействительно';
+      return `
+${status} Средство измерений найдено!
+
+Наименование: ${item.mit_notation || 'Не указано'}
+Заводской номер: ${item.mi_number || 'Не указано'}
+Номер свидетельства: ${item.mit_number || 'Не указано'}
+
+Дата поверки: ${item.verification_date || 'Не указано'}
+Действительно до: ${item.valid_date || 'Не указано'}
+
+Организация поверки: ${item.org_title || 'Не указано'}
+`.trim();
+    }
+
+    checkBtn.onclick = async () => {
+      const vri = vriInput.value.trim();
+      if (!vri) {
+        alert('Введите номер поверки');
+        return;
+      }
+
+      checkBtn.disabled = true;
+      resultDiv.textContent = 'Идёт запрос к ФГИС Аршин...';
+
+      try {
+        const data = await fetchVriData(vri);
+        if (data.result.items.length === 0) {
+          resultDiv.textContent = '❌ Средство измерений не найдено. Проверьте номер.';
+          checkBtn.disabled = false;
+          return;
+        }
+        const item = data.result.items[0];
+        const text = formatResult(item);
+        resultDiv.textContent = text;
+
+        // Отправляем данные обратно боту (опционально)
+        tg.sendData(JSON.stringify({vri, status: item.applicability}));
+
+      } catch (e) {
+        resultDiv.textContent = '⚠️ Ошибка при запросе. Попробуйте позже.';
+      }
+
+      checkBtn.disabled = false;
+    };
+  </script>
+</body>
+</html>
